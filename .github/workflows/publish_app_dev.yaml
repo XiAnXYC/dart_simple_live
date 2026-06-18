@@ -9,12 +9,16 @@ on:
 jobs:
   # 打包Android、iOS、Mac
   build-mac-ios-android:
-    runs-on: macos-latest
+    runs-on: macos-26
 
     permissions:
       contents: write
 
     steps:
+      - name: Show Xcode version
+        run: |
+          sw_vers
+          xcodebuild -version
       # 签出代码
       - uses: actions/checkout@v4
         with:

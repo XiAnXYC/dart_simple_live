@@ -173,7 +173,7 @@ jobs:
       - run: echo "🍏 Linux job's status is ${{ job.status }}."
 
   # 打包Windows
-   build-windows:
+  build-windows:
     runs-on: windows-latest
     permissions:
       contents: write

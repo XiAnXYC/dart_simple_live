@@ -32,6 +32,7 @@ import 'package:simple_live_app/services/sync_service.dart';
 import 'package:simple_live_app/widgets/status/app_loadding_widget.dart';
 import 'package:simple_live_core/simple_live_core.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:simple_live_app/modules/live_room/live_room_controller.dart';
 
 import 'package:path/path.dart' as p;
 import 'package:dynamic_color/dynamic_color.dart';
@@ -233,7 +234,12 @@ class MyApp extends StatelessWidget {
                           //如果处于全屏状态，退出全屏
                           if (!Platform.isAndroid && !Platform.isIOS) {
                             if (await windowManager.isFullScreen()) {
-                              await windowManager.setFullScreen(false);
+                              if (Get.isRegistered<LiveRoomController>()) {
+                                Get.find<LiveRoomController>().exitFull();
+                              } else {
+                                await windowManager.setFullScreen(false);
+                                await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+                              }
                               return;
                             }
                           }
@@ -251,7 +257,12 @@ class MyApp extends StatelessWidget {
                         // 如果处于全屏状态，退出全屏
                         if (!Platform.isAndroid && !Platform.isIOS) {
                           if (await windowManager.isFullScreen()) {
-                            await windowManager.setFullScreen(false);
+                            if (Get.isRegistered<LiveRoomController>()) {
+                              Get.find<LiveRoomController>().exitFull();
+                            } else {
+                              await windowManager.setFullScreen(false);
+                              await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+                            }
                             return;
                           }
                         }

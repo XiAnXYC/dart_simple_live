@@ -272,7 +272,7 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
   }
 
   /// 进入全屏
-  void enterFullScreen() {
+  void enterFullScreen() async {
     fullScreenState.value = true;
     if (Platform.isAndroid || Platform.isIOS) {
       //全屏
@@ -282,19 +282,21 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
         setLandscapeOrientation();
       }
     } else {
-      windowManager.setFullScreen(true);
+      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+      await windowManager.setFullScreen(true);
     }
     //danmakuController?.clear();
   }
 
   /// 退出全屏
-  void exitFull() {
+  void exitFull() async {
     if (Platform.isAndroid || Platform.isIOS) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge,
           overlays: SystemUiOverlay.values);
       setPortraitOrientation();
     } else {
-      windowManager.setFullScreen(false);
+      await windowManager.setFullScreen(false);
+      await windowManager.setTitleBarStyle(TitleBarStyle.normal);
     }
     fullScreenState.value = false;
 

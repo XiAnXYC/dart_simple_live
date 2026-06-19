@@ -19,6 +19,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   flutter::DartProject project(L"data");
 
+  // Flutter 3.38 Windows frame pacing workaround.
+  // Remove after upgrading to a Flutter version containing the upstream fix.
+  project.set_ui_thread_policy(
+      flutter::UIThreadPolicy::RunOnSeparateThread);
+
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
 

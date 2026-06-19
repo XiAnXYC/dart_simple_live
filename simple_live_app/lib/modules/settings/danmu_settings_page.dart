@@ -173,7 +173,7 @@ class DanmuSettingsView extends GetView<AppSettingsController> {
                   onChanged: (e) {
                     controller.setDanmuSpeed(e.toDouble());
                     updateDanmuOption(
-                      danmakuController?.option.copyWith(duration: e.toInt()),
+                      danmakuController?.option.copyWith(duration: e.toDouble()),
                     );
                   },
                 ),

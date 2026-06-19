@@ -73,6 +73,12 @@ jobs:
         run: |
           cd simple_live_app
           flutter pub get
+          
+      # 打印依赖状态    
+      - name: Check outdated packages
+        working-directory: simple_live_app
+        continue-on-error: true
+        run: flutter pub outdated
 
       # 安装appdmg npm install -g appdmg
       - name: Install appdmg

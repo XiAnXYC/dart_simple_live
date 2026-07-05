@@ -19,10 +19,10 @@ WORKDIR /app/simple_live_server
 # 获取 Dart 依赖并触发运行 build hooks
 RUN dart pub get
 
-# 编译为自包含的原生可执行二进制文件
-RUN dart compile exe bin/main.dart -o bin/server
+# 编译为自包含的 Dart Kernel AST 字节码文件，支持 build hooks 且避免运行时解析依赖
+RUN dart compile kernel bin/main.dart -o bin/server.dill
 
 EXPOSE 8080
 
 # 启动聚合直播服务端
-CMD ["./bin/server"]
+CMD ["dart", "bin/server.dill"]

@@ -527,7 +527,7 @@ async function playRoomWithQuality(quality) {
         site: currentRoom.site,
         roomId: currentRoom.roomId,
         quality: quality.quality,
-        data: quality.data
+        index: quality.index
       })
     });
 
@@ -560,9 +560,16 @@ function initDPlayer(videoUrl) {
     container: document.getElementById('dplayer'),
     live: true,
     autoplay: true,
+    preventClickToggle: true, // 禁用点击画面暂停以避免直播流断连恢复失败
     video: {
       url: videoUrl,
       type: videoType
+    },
+    danmaku: {
+      id: currentRoom.roomId,
+      api: 'https://api.prprpr.me/dplayer/', // 启用 DPlayer 弹幕机制
+      bottom: '15%',
+      unlimited: true
     }
   });
 

@@ -791,6 +791,16 @@ body {
   background-color: #000;
 }
 
+/* 彻底清除 DPlayer 全屏状态下的任何背景漏白与边距白边 */
+#dplayer:fullscreen,
+#dplayer:-webkit-full-screen,
+#dplayer:-moz-full-screen,
+#dplayer:-ms-fullscreen {
+  background-color: #000 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
 /* 侧边栏弹幕列表 */
 .danmaku-sidebar {
   width: 320px;

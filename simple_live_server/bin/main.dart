@@ -63,13 +63,23 @@ Future<void> saveConfig() async {
 LiveSite? getSite(String siteName) {
   switch (siteName.toLowerCase()) {
     case 'bilibili':
-      return BiliBiliSite();
+      var site = BiliBiliSite();
+      var bCookie = config['bilibili_cookie'] as String?;
+      if (bCookie != null && bCookie.isNotEmpty) {
+        site.cookie = bCookie;
+      }
+      return site;
     case 'huya':
       return HuyaSite();
     case 'douyu':
       return DouyuSite();
     case 'douyin':
-      return DouyinSite();
+      var site = DouyinSite();
+      var dyCookie = config['douyin_cookie'] as String?;
+      if (dyCookie != null && dyCookie.isNotEmpty) {
+        site.cookie = dyCookie;
+      }
+      return site;
     default:
       return null;
   }

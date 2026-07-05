@@ -597,18 +597,20 @@ function initDPlayer(videoUrl) {
         hls: function (video, player) {
           if (Hls.isSupported()) {
             const hls = new Hls({
-              maxBufferLength: 30,             // 最大安全缓冲区时长（30秒），防止网络微抖动卡顿
-              maxMaxBufferLength: 60,          // 极限安全缓冲区时长（60秒）
-              liveSyncDurationCount: 5,        // 与直播边缘保持 5 个切片的距离（多蓄水）
-              liveMaxLatencyDurationCount: 10, // 直播最大容忍延迟（10个切片）
+              maxBufferLength: 20,             // 适度缓冲区大小（20秒）
+              maxMaxBufferLength: 40,          // 极限缓冲区大小（40秒）
+              backBufferLength: 10,            // 关键：强制释放已播完的 10 秒前历史切片，防止内存无限累积卡死
+              liveSyncDurationCount: 4,        // 保持 4 个切片的安全同步（多蓄水）
+              liveMaxLatencyDurationCount: 8,
               enableWorker: true,              // 启用 worker 线程
-              lowLatencyMode: false            // 关闭低延迟，以稳定和蓄水优先，根治卡顿
+              lowLatencyMode: false            // 以画面平滑蓄水优先
             });
             hls.loadSource(video.src);
             hls.attachMedia(video);
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // iOS/Safari 的原生播放兼容
-            video.src = video.src;
+            // iOS/Safari 的原生播放兼容，必须正确载入真实流地址并主动加载
+            video.src = videoUrl;
+            video.load();
           }
         },
         flv: function (video, player) {

@@ -21,6 +21,7 @@ let qrB3 = '';                // B站扫码关联 buvid3
 let qrB4 = '';                // B站扫码关联 buvid4
 let pendingDanmakus = [];     // 弹幕缓存队列，用于节流更新DOM以防卡死主线程
 let danmakuTimer = null;      // 弹幕节流定时器
+let lastDrawTime = 0;         // 上一次绘制弹幕到视频画面的时间戳，用于防刷防卡顿
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -681,13 +682,15 @@ function connectDanmakuWS(site, roomId) {
     try {
       const data = JSON.parse(event.data);
       if (data.type === 'chat') {
-        // 渲染到 DPlayer 弹幕层
-        if (dp && dp.danmaku) {
+        // 渲染到 DPlayer 弹幕层 (添加 250ms 时间戳防刷限制，防止超高频弹幕重绘卡死主线程)
+        const now = Date.now();
+        if (dp && dp.danmaku && (now - lastDrawTime > 250)) {
           dp.danmaku.draw({
             text: data.message,
             color: '#ffffff',
             type: 'right'
           });
+          lastDrawTime = now;
         }
 
         // 加入批量节流渲染队列

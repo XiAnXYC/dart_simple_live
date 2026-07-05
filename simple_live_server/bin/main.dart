@@ -447,22 +447,51 @@ void handleApiRequest(HttpRequest request) async {
     return;
   }
 
-  // 7.1 获取 B站 登录二维码生成参数
+  // 7.1 获取 B站 登录二维码生成参数 (结合 buvid3/buvid4 特征指纹以避开安全风控)
   if (path == '/api/bilibili/qr/generate' && method == 'GET') {
     try {
       var dio = _dio;
-      var response = await dio.get("https://passport.bilibili.com/x/passport-login/web/qrcode/generate");
-      sendJsonResponse(request, response.data);
+      // 1. 获取 buvid 凭证
+      var buvidResp = await dio.get(
+        "https://api.bilibili.com/x/frontend/finger/spi",
+        options: Options(headers: {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "referer": "https://passport.bilibili.com/",
+        }),
+      );
+      var b3 = "";
+      var b4 = "";
+      if (buvidResp.data != null && buvidResp.data['data'] != null) {
+        b3 = buvidResp.data['data']['b_3'] ?? "";
+        b4 = buvidResp.data['data']['b_4'] ?? "";
+      }
+
+      // 2. 携带 buvid 获取二维码
+      var response = await dio.get(
+        "https://passport.bilibili.com/x/passport-login/web/qrcode/generate",
+        options: Options(headers: {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "referer": "https://passport.bilibili.com/",
+          "cookie": "buvid3=$b3;buvid4=$b4;",
+        }),
+      );
+
+      var resData = Map<String, dynamic>.from(response.data);
+      resData['buvid3'] = b3;
+      resData['buvid4'] = b4;
+      sendJsonResponse(request, resData);
     } catch (e) {
       sendJsonResponse(request, {'code': -1, 'message': e.toString()}, status: HttpStatus.internalServerError);
     }
     return;
   }
 
-  // 7.2 轮询 B站 二维码扫码登录状态
+  // 7.2 轮询 B站 二维码扫码登录状态 (携带对应 buvid3/buvid4 以便通过 API 校验)
   if (path == '/api/bilibili/qr/poll' && method == 'GET') {
     var params = request.uri.queryParameters;
     var qrcodeKey = params['key'] ?? '';
+    var b3 = params['b3'] ?? '';
+    var b4 = params['b4'] ?? '';
     if (qrcodeKey.isEmpty) {
       sendJsonResponse(request, {'success': false, 'message': 'qrcode_key required'}, status: HttpStatus.badRequest);
       return;
@@ -473,17 +502,26 @@ void handleApiRequest(HttpRequest request) async {
       var response = await dio.get(
         "https://passport.bilibili.com/x/passport-login/web/qrcode/poll",
         queryParameters: {"qrcode_key": qrcodeKey},
+        options: Options(headers: {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "referer": "https://passport.bilibili.com/",
+          "cookie": "buvid3=$b3;buvid4=$b4;",
+        }),
       );
       
       var data = response.data['data'];
       if (data != null && data['code'] == 0) {
-        // 扫码登录成功！提取 Cookie 并写入配置
+        // 扫码登录成功！提取 Cookie
         var setCookies = response.headers['set-cookie'] ?? [];
         var cookies = <String>[];
         for (var rawCookie in setCookies) {
           var c = rawCookie.split(';')[0];
           if (c.isNotEmpty) cookies.add(c);
         }
+        // 同时把对应的 buvid 绑定写回 Cookie，保障高清获取权限
+        if (b3.isNotEmpty) cookies.add("buvid3=$b3");
+        if (b4.isNotEmpty) cookies.add("buvid4=$b4");
+
         if (cookies.isNotEmpty) {
           var cookieStr = cookies.join(';');
           config['bilibili_cookie'] = cookieStr;
@@ -493,6 +531,30 @@ void handleApiRequest(HttpRequest request) async {
       sendJsonResponse(request, response.data);
     } catch (e) {
       sendJsonResponse(request, {'code': -1, 'message': e.toString()}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 7.3 手动提交备用 B站 Cookie
+  if (path == '/api/bilibili/cookie' && method == 'POST') {
+    try {
+      var body = await readJsonBody(request);
+      if (body == null) {
+        sendJsonResponse(request, {'success': false, 'message': 'Invalid JSON body'}, status: HttpStatus.badRequest);
+        return;
+      }
+      var cookieStr = body['cookie'] as String? ?? '';
+      if (cookieStr.trim().isEmpty) {
+        sendJsonResponse(request, {'success': false, 'message': 'Cookie cannot be empty'}, status: HttpStatus.badRequest);
+        return;
+      }
+
+      config['bilibili_cookie'] = cookieStr.trim();
+      await saveConfig();
+
+      sendJsonResponse(request, {'success': true, 'message': 'Cookie saved successfully'});
+    } catch (e) {
+      sendJsonResponse(request, {'success': false, 'message': e.toString()}, status: HttpStatus.internalServerError);
     }
     return;
   }

@@ -17,6 +17,8 @@ let currentRoom = null;       // 当前播放房间详情：{site, roomId}
 let qualities = [];           // 清晰度列表
 let qrPollTimer = null;       // B站扫码轮询定时器
 let qrKey = '';               // B站扫码 key
+let qrB3 = '';                // B站扫码关联 buvid3
+let qrB4 = '';                // B站扫码关联 buvid4
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -41,10 +43,24 @@ function initApp() {
   // 绑定 B站 扫码登录
   document.getElementById('bili-login-btn').addEventListener('click', () => {
     document.getElementById('bili-qr-modal').style.display = 'flex';
+    // 隐藏可能展开的手动输入框并清空内容
+    document.getElementById('bili-manual-input-area').style.display = 'none';
+    document.getElementById('bili-cookie-input').value = '';
+    document.getElementById('bili-toggle-manual-btn').innerText = '手动输入 Cookie (备用)';
     startBiliQRLogin();
   });
   document.getElementById('bili-qr-refresh-btn').addEventListener('click', startBiliQRLogin);
   document.getElementById('bili-qr-close-btn').addEventListener('click', closeBiliQRModal);
+
+  // 绑定 B站 备份手动输入 Cookie
+  document.getElementById('bili-toggle-manual-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+    const area = document.getElementById('bili-manual-input-area');
+    const isHidden = area.style.display === 'none';
+    area.style.display = isHidden ? 'block' : 'none';
+    document.getElementById('bili-toggle-manual-btn').innerText = isHidden ? '收起手动输入' : '手动输入 Cookie (备用)';
+  });
+  document.getElementById('bili-save-cookie-btn').addEventListener('click', handleSaveBiliCookie);
 
   // 导航栏事件
   const navItems = document.querySelectorAll('.nav-item');
@@ -882,16 +898,18 @@ async function startBiliQRLogin() {
     const data = await fetchApi('/api/bilibili/qr/generate');
     if (data.code === 0 && data.data) {
       qrKey = data.data.qrcode_key;
+      qrB3 = data.buvid3 || '';
+      qrB4 = data.buvid4 || '';
       const url = data.data.url;
 
-      // 使用公用二维码生成服务，将 url 渲染为二维码
+      // 渲染二维码
       img.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
       img.onload = () => {
         mask.style.display = 'none';
         img.style.display = 'block';
       };
 
-      // 启动 3 秒轮询
+      // 启动轮询
       qrPollTimer = setInterval(pollBiliQRStatus, 3000);
     } else {
       mask.innerText = '生成二维码失败，请重试';
@@ -910,7 +928,7 @@ async function pollBiliQRStatus() {
   const tips = document.getElementById('bili-qr-tips');
 
   try {
-    const data = await fetchApi(`/api/bilibili/qr/poll?key=${qrKey}`);
+    const data = await fetchApi(`/api/bilibili/qr/poll?key=${qrKey}&b3=${encodeURIComponent(qrB3)}&b4=${encodeURIComponent(qrB4)}`);
     if (data.code === 0 && data.data) {
       const code = data.data.code;
       if (code === 0) {
@@ -937,5 +955,38 @@ async function pollBiliQRStatus() {
     }
   } catch (err) {
     console.error('Polling QR status error', err);
+  }
+}
+
+async function handleSaveBiliCookie() {
+  const cookieVal = document.getElementById('bili-cookie-input').value;
+  if (!cookieVal.trim()) {
+    alert('请输入有效的 B站 Cookie！');
+    return;
+  }
+
+  const btn = document.getElementById('bili-save-cookie-btn');
+  btn.disabled = true;
+  btn.innerText = '保存中...';
+
+  try {
+    const res = await fetchApi('/api/bilibili/cookie', {
+      method: 'POST',
+      body: JSON.stringify({ cookie: cookieVal })
+    });
+
+    if (res.success) {
+      alert('🎉 Cookie 保存并应用成功！');
+      closeBiliQRModal();
+      loadRooms(true);
+    } else {
+      alert('保存失败：' + res.message);
+    }
+  } catch (err) {
+    alert('连接服务器失败');
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = '保存并生效';
   }
 }

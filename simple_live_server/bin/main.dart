@@ -196,6 +196,12 @@ void handleApiRequest(HttpRequest request) async {
     return;
   }
 
+  // DPlayer 弹幕 mock 接口（无需鉴权，DPlayer 内部自动调用，返回空弹幕即可）
+  if (path.startsWith('/api/dplayer/')) {
+    sendJsonResponse(request, {'code': 0, 'data': []});
+    return;
+  }
+
   // 校验登录态 (以下 API 全都需要登录)
   var username = validateTokenAndGetUsername(request);
   if (username == null) {

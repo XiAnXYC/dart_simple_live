@@ -5,6 +5,8 @@ import 'package:simple_live_core/simple_live_core.dart';
 
 Map<String, dynamic> config = {};
 String configPath = '';
+// 缓存各直播间解析出的原装画质对象，以供在获取播放地址时正确还原其底层自定义对象（如 HuyaLineModel）
+final Map<String, List<LivePlayQuality>> _qualitiesCache = {};
 
 void main() async {
   // 查找配置文件和静态资源目录
@@ -318,11 +320,19 @@ void handleApiRequest(HttpRequest request) async {
       var qualities = <Map<String, dynamic>>[];
       if (detail.status) {
         var qList = await site.getPlayQualites(detail: detail);
-        qualities = qList.map((q) => {
-          'quality': q.quality,
-          'data': q.data,
-          'sort': q.sort
-        }).toList();
+        
+        // 缓存强类型画质对象
+        var cacheKey = '$siteName:$roomId';
+        _qualitiesCache[cacheKey] = qList;
+
+        // 构造发送给前端的画质，剔除 data 并追加 index
+        for (var i = 0; i < qList.length; i++) {
+          qualities.add({
+            'quality': qList[i].quality,
+            'sort': qList[i].sort,
+            'index': i,
+          });
+        }
       }
 
       sendJsonResponse(request, {
@@ -356,17 +366,29 @@ void handleApiRequest(HttpRequest request) async {
     var siteName = body['site'] as String?;
     var roomId = body['roomId'] as String?;
     var qQuality = body['quality'] as String?;
-    var qData = body['data'];
+    var index = body['index'] as int?;
 
     var site = getSite(siteName ?? '');
-    if (site == null || roomId == null || qQuality == null || qData == null) {
+    if (site == null || roomId == null || qQuality == null) {
       sendJsonResponse(request, {'success': false, 'message': 'Invalid parameters'}, status: HttpStatus.badRequest);
       return;
     }
 
     try {
       var detail = await site.getRoomDetail(roomId: roomId);
-      var quality = LivePlayQuality(quality: qQuality, data: qData);
+      
+      // 试图从缓存里精确恢复强类型的 LivePlayQuality (包含 HuyaLineModel 等)
+      var cacheKey = '$siteName:$roomId';
+      var cachedQualities = _qualitiesCache[cacheKey];
+      LivePlayQuality? quality;
+
+      if (cachedQualities != null && index != null && index >= 0 && index < cachedQualities.length) {
+        quality = cachedQualities[index];
+      } else {
+        // Fallback
+        quality = LivePlayQuality(quality: qQuality, data: null);
+      }
+
       var playUrls = await site.getPlayUrls(detail: detail, quality: quality);
       sendJsonResponse(request, {
         'success': true,

@@ -22,6 +22,7 @@ let qrB4 = '';                // B站扫码关联 buvid4
 let pendingDanmakus = [];     // 弹幕缓存队列，用于节流更新DOM以防卡死主线程
 let danmakuTimer = null;      // 弹幕节流定时器
 let lastDrawTime = 0;         // 上一次绘制弹幕到视频画面的时间戳，用于防刷防卡顿
+let blockRules = [];          // 屏蔽规则列表
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -57,6 +58,18 @@ function initApp() {
     document.getElementById('bili-toggle-manual-btn').innerText = isHidden ? '收起手动输入' : '手动输入 Cookie (备用)';
   });
   document.getElementById('bili-save-cookie-btn').addEventListener('click', handleSaveBiliCookie);
+
+  // 载入本地屏蔽配置
+  loadBlockRules();
+
+  // 绑定屏蔽规则事件
+  document.getElementById('block-settings-nav-btn').addEventListener('click', (e) => {
+    e.preventDefault();
+    openBlockModal();
+  });
+  document.getElementById('block-close-btn').addEventListener('click', closeBlockModal);
+  document.getElementById('block-cancel-btn').addEventListener('click', closeBlockModal);
+  document.getElementById('block-save-btn').addEventListener('click', saveBlockRules);
 
   // 导航栏事件
   const navItems = document.querySelectorAll('.nav-item');
@@ -103,6 +116,14 @@ function initApp() {
   const triggerSearch = () => {
     const val = searchInput.value.trim();
     if (val) {
+      // 优先拦截直播间地址直接解析开播并支持关注！
+      const liveInfo = parseLiveUrl(val);
+      if (liveInfo) {
+        searchInput.value = '';
+        openPlayer(liveInfo.site, liveInfo.roomId);
+        return;
+      }
+
       searchKeyword = val;
       // 如果当前不是具体的直播平台（如在推荐或收藏），默认切换到 B站 发起搜索，并高亮B站侧边栏
       if (!['bilibili', 'huya', 'douyu', 'douyin'].includes(activeSite)) {
@@ -678,6 +699,10 @@ function connectDanmakuWS(site, roomId) {
     try {
       const data = JSON.parse(event.data);
       if (data.type === 'chat') {
+        // 校验屏蔽关键词与通配符，满足条件直接拦截丢弃
+        if (isBlocked(data.message)) {
+          return;
+        }
         // 渲染到 DPlayer 弹幕层 (添加 250ms 时间戳防刷限制，防止超高频弹幕重绘卡死主线程)
         const now = Date.now();
         if (dp && dp.danmaku && (now - lastDrawTime > 250)) {
@@ -1107,4 +1132,93 @@ async function updateBiliStatus() {
     console.error('Failed to check Bilibili status', err);
     statusText.innerHTML = `<span id="bili-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: #ff5252; display: inline-block; transition: all 0.3s;"></span> 连接失败`;
   }
+}
+
+// ================= 弹幕屏蔽规则与网址直达核心模块 =================
+
+function parseLiveUrl(url) {
+  url = url.trim();
+  // B站 (支持 https://live.bilibili.com/22637287 及其 h5 页面)
+  let match = url.match(/live\.bilibili\.com\/(?:h5\/)?(\d+)/i);
+  if (match) {
+    return { site: 'bilibili', roomId: match[1] };
+  }
+
+  // 虎牙 (支持 https://www.huya.com/998 及其 m 移动页面)
+  match = url.match(/huya\.com\/([a-zA-Z0-9_-]+)/i);
+  if (match) {
+    return { site: 'huya', roomId: match[1] };
+  }
+
+  // 斗鱼 (支持 https://www.douyu.com/100 及其移动端专题)
+  match = url.match(/douyu\.com\/(?:topic\/[a-zA-Z0-9_#-]+\?rid=)?(\d+)/i);
+  if (!match) {
+    match = url.match(/douyu\.com\/(\d+)/i);
+  }
+  if (match) {
+    return { site: 'douyu', roomId: match[1] };
+  }
+
+  return null;
+}
+
+function loadBlockRules() {
+  try {
+    const data = localStorage.getItem('danmaku_block_rules');
+    if (data) {
+      blockRules = JSON.parse(data);
+    } else {
+      blockRules = [];
+    }
+  } catch (e) {
+    console.error('Failed to load block rules', e);
+    blockRules = [];
+  }
+}
+
+function openBlockModal() {
+  document.getElementById('block-settings-modal').style.display = 'flex';
+  document.getElementById('block-rules-input').value = blockRules.join('\n');
+}
+
+function closeBlockModal() {
+  document.getElementById('block-settings-modal').style.display = 'none';
+}
+
+function saveBlockRules() {
+  const text = document.getElementById('block-rules-input').value;
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  
+  try {
+    localStorage.setItem('danmaku_block_rules', JSON.stringify(lines));
+    blockRules = lines;
+    alert('🎉 弹幕屏蔽规则保存并生效成功！');
+    closeBlockModal();
+  } catch (e) {
+    alert('保存失败，浏览器本地空间不足');
+    console.error(e);
+  }
+}
+
+function isBlocked(message) {
+  if (!message || blockRules.length === 0) return false;
+
+  for (let rule of blockRules) {
+    if (!rule) continue;
+
+    try {
+      // 1. 将屏蔽词中的正则特殊元字符进行安全转义，保留 * 号
+      let regStr = rule.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      // 2. 将通配符 * 转换为匹配任意字符的 .* 
+      regStr = regStr.replace(/\*/g, '.*');
+      // 3. 构建正则表达式（不区分大小写，全局包含）
+      const regex = new RegExp(regStr, 'i');
+      if (regex.test(message)) {
+        return true;
+      }
+    } catch (err) {
+      console.error('Invalid wildcard pattern matching: ' + rule, err);
+    }
+  }
+  return false;
 }

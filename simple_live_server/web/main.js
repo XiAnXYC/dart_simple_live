@@ -82,6 +82,12 @@ function initApp() {
   navItems.forEach(item => {
     item.addEventListener('click', (e) => {
       e.preventDefault();
+      
+      // 拦截弹幕屏蔽，不执行导航重置与大厅房间刷新
+      if (item.id === 'block-settings-nav-btn') {
+        return;
+      }
+
       navItems.forEach(i => i.classList.remove('active'));
       item.classList.add('active');
 

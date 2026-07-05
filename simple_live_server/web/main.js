@@ -625,81 +625,18 @@ function initDPlayer(videoUrl) {
         hls: function (video, player) {
           if (Hls.isSupported()) {
             const hls = new Hls({
-              maxBufferLength: 20,             // 适度缓冲区大小（20秒）
-              maxMaxBufferLength: 40,          // 极限缓冲区大小（40秒）
-              backBufferLength: 10,            // 关键：强制释放已播完的 10 秒前历史切片，防止内存无限累积卡死
-              liveSyncDurationCount: 4,        // 保持 4 个切片的安全同步（多蓄水）
+              maxBufferLength: 20,
+              maxMaxBufferLength: 40,
+              backBufferLength: 10,
+              liveSyncDurationCount: 4,
               liveMaxLatencyDurationCount: 8,
-              enableWorker: true,              // 启用 worker 线程
-              lowLatencyMode: false            // 以画面平滑蓄水优先
+              enableWorker: true,
+              lowLatencyMode: false
             });
             hls.loadSource(video.src);
             hls.attachMedia(video);
-
-            // ======== 虎牙流 Token 自动续期机制 ========
-            // 虎牙流地址签名 wsTime 有效期约 5-15 分钟，过期后 CDN 返回 403 导致画面卡死
-            // 解决方案：双保险
-            //   1. 主动定时器（每 4 分钟预刷）
-            //   2. 被动错误监听（fatal NETWORK_ERROR 时立即刷新）
-            if (currentRoom && currentRoom.site === 'huya') {
-              let isRefreshing = false;
-
-              const refreshHuyaStream = async () => {
-                if (isRefreshing) return;
-                isRefreshing = true;
-                try {
-                  const activeQualityBtn = document.querySelector('#quality-buttons .btn-quality.active');
-                  const currentQuality = qualities.find(q => q.quality === (activeQualityBtn?.innerText || '')) || qualities[0];
-                  if (!currentQuality) return;
-
-                  const data = await fetchApi('/api/room/urls', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      site: currentRoom.site,
-                      roomId: currentRoom.roomId,
-                      quality: currentQuality.quality,
-                      index: currentQuality.index
-                    })
-                  });
-
-                  if (data.success && data.urls && data.urls.length > 0) {
-                    const newUrl = data.urls[0];
-                    console.log('[Huya] 流地址已自动续期刷新:', newUrl);
-                    hls.stopLoad();
-                    hls.loadSource(newUrl);
-                    hls.startLoad();
-                    // 关键：loadSource 后 video 元素仍处于 paused 状态，必须手动 play() 恢复
-                    video.play().catch(e => console.warn('[Huya] 续期后自动恢复播放失败', e));
-                  }
-                } catch (e) {
-                  console.error('[Huya] 流地址续期刷新失败', e);
-                } finally {
-                  isRefreshing = false;
-                }
-              };
-
-              // 1. 主动定时续期：每 4 分钟预刷（比 wsTime 过期留足余量）
-              if (huyaRefreshTimer) clearInterval(huyaRefreshTimer);
-              huyaRefreshTimer = setInterval(refreshHuyaStream, 4 * 60 * 1000);
-
-              // 2. 被动错误监听：fatal NETWORK_ERROR（含403）立即触发续期
-              hls.on(Hls.Events.ERROR, (event, errData) => {
-                if (errData.fatal) {
-                  if (errData.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                    console.warn('[Huya] HLS fatal 网络错误，触发自动续期...');
-                    refreshHuyaStream();
-                  } else if (errData.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                    console.warn('[Huya] HLS 媒体错误，尝试自愈...');
-                    hls.recoverMediaError();
-                  }
-                }
-              });
-            }
-            // ======== END 虎牙流 Token 自动续期机制 ========
-
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // iOS/Safari 的原生播放兼容，必须正确载入真实流地址并主动加载
+            // iOS/Safari 原生 HLS 兼容
             video.src = videoUrl;
             video.load();
           }

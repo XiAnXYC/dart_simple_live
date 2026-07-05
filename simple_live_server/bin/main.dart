@@ -416,38 +416,8 @@ void handleApiRequest(HttpRequest request) async {
       var playUrls = await site.getPlayUrls(detail: detail, quality: quality);
       var urls = playUrls.urls;
 
-      // 针对虎牙源的后处理：将任意 CDN 节点的 FLV/RTMP 链接转换为 HLS m3u8 直链
-      // 虎牙 CDN 节点命名规律：{prefix}.{type}.huya.com，type 有 flv/rtmp/hls 等
-      // 统一将所有节点的域名替换为对应的 hls 前缀节点（al.hls / tx.hls / bd.hls 等）
-      if (siteName == 'huya') {
-        urls = urls.map((url) {
-          var updated = url;
-          // 1. 通用域名替换：将 {prefix}.flv.huya.com / {prefix}.rtmp.huya.com 等
-          //    全部替换为 {prefix}.hls.huya.com（保留 CDN 前缀如 al/tx/bd/hw）
-          updated = updated.replaceAllMapped(
-            RegExp(r'([a-z0-9\-]+)\.(flv|rtmp|ws|live)\.(huya\.com)'),
-            (m) => '${m[1]}.hls.${m[3]}',
-          );
-          // 2. 若没有匹配到已知类型但还是 huya.com，强行替换为 hls
-          if (!updated.contains('.hls.huya.com') && updated.contains('.huya.com')) {
-            updated = updated.replaceAllMapped(
-              RegExp(r'([a-z0-9\-]+)\.huya\.com'),
-              (m) => '${m[1]}.hls.huya.com',
-            );
-          }
-          // 3. 替换文件后缀：将 /src/xxx.flv 替换为 /src/xxx.m3u8
-          if (updated.contains('.flv?')) {
-            updated = updated.replaceFirst('.flv?', '.m3u8?');
-          } else if (updated.endsWith('.flv')) {
-            updated = updated.substring(0, updated.length - 4) + '.m3u8';
-          }
-          // 4. 升级协议为 https
-          if (updated.startsWith('http://')) {
-            updated = 'https://' + updated.substring(7);
-          }
-          return updated;
-        }).toList();
-      }
+      // 虎牙源直接使用原始 FLV URL，由前端 flv.js 播放（长连接，无 token 轮询问题）
+      // 不再做 flv→m3u8 域名替换，与虎牙官方网页端策略一致
 
       sendJsonResponse(request, {
         'success': true,

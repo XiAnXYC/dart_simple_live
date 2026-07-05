@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:simple_live_core/simple_live_core.dart';
+import 'package:dio/dio.dart';
 
 Map<String, dynamic> config = {};
 String configPath = '';
 // 缓存各直播间解析出的原装画质对象，以供在获取播放地址时正确还原其底层自定义对象（如 HuyaLineModel）
 final Map<String, List<LivePlayQuality>> _qualitiesCache = {};
+final Dio _dio = Dio();
 
 void main() async {
   // 查找配置文件和静态资源目录
@@ -448,7 +450,7 @@ void handleApiRequest(HttpRequest request) async {
   // 7.1 获取 B站 登录二维码生成参数
   if (path == '/api/bilibili/qr/generate' && method == 'GET') {
     try {
-      var dio = HttpClient.instance.dio;
+      var dio = _dio;
       var response = await dio.get("https://passport.bilibili.com/x/passport-login/web/qrcode/generate");
       sendJsonResponse(request, response.data);
     } catch (e) {
@@ -467,7 +469,7 @@ void handleApiRequest(HttpRequest request) async {
     }
 
     try {
-      var dio = HttpClient.instance.dio;
+      var dio = _dio;
       var response = await dio.get(
         "https://passport.bilibili.com/x/passport-login/web/qrcode/poll",
         queryParameters: {"qrcode_key": qrcodeKey},

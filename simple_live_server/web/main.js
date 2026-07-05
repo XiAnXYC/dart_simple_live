@@ -15,6 +15,8 @@ let dp = null;
 let ws = null;
 let currentRoom = null;       // 当前播放房间详情：{site, roomId}
 let qualities = [];           // 清晰度列表
+let qrPollTimer = null;       // B站扫码轮询定时器
+let qrKey = '';               // B站扫码 key
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -35,6 +37,14 @@ function initApp() {
   // 绑定退出登录
   document.getElementById('logout-btn').addEventListener('submit', (e) => e.preventDefault());
   document.getElementById('logout-btn').addEventListener('click', handleLogout);
+
+  // 绑定 B站 扫码登录
+  document.getElementById('bili-login-btn').addEventListener('click', () => {
+    document.getElementById('bili-qr-modal').style.display = 'flex';
+    startBiliQRLogin();
+  });
+  document.getElementById('bili-qr-refresh-btn').addEventListener('click', startBiliQRLogin);
+  document.getElementById('bili-qr-close-btn').addEventListener('click', closeBiliQRModal);
 
   // 导航栏事件
   const navItems = document.querySelectorAll('.nav-item');
@@ -841,4 +851,91 @@ function removeOverlay() {
 function closeMobileSidebar() {
   document.querySelector('.app-sidebar').classList.remove('open');
   removeOverlay();
+}
+
+// ================= B站扫码登录模块 =================
+
+function closeBiliQRModal() {
+  document.getElementById('bili-qr-modal').style.display = 'none';
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer);
+    qrPollTimer = null;
+  }
+}
+
+async function startBiliQRLogin() {
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer);
+    qrPollTimer = null;
+  }
+
+  const mask = document.getElementById('bili-qr-status-mask');
+  const img = document.getElementById('bili-qr-img');
+  const tips = document.getElementById('bili-qr-tips');
+
+  mask.style.display = 'flex';
+  mask.innerText = '正在生成二维码...';
+  img.style.display = 'none';
+  tips.innerText = '请使用手机哔哩哔哩客户端扫码登录';
+
+  try {
+    const data = await fetchApi('/api/bilibili/qr/generate');
+    if (data.code === 0 && data.data) {
+      qrKey = data.data.qrcode_key;
+      const url = data.data.url;
+
+      // 使用公用二维码生成服务，将 url 渲染为二维码
+      img.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+      img.onload = () => {
+        mask.style.display = 'none';
+        img.style.display = 'block';
+      };
+
+      // 启动 3 秒轮询
+      qrPollTimer = setInterval(pollBiliQRStatus, 3000);
+    } else {
+      mask.innerText = '生成二维码失败，请重试';
+    }
+  } catch (err) {
+    mask.innerText = '连接服务器失败';
+    console.error(err);
+  }
+}
+
+async function pollBiliQRStatus() {
+  if (!qrKey) return;
+  
+  const mask = document.getElementById('bili-qr-status-mask');
+  const img = document.getElementById('bili-qr-img');
+  const tips = document.getElementById('bili-qr-tips');
+
+  try {
+    const data = await fetchApi(`/api/bilibili/qr/poll?key=${qrKey}`);
+    if (data.code === 0 && data.data) {
+      const code = data.data.code;
+      if (code === 0) {
+        clearInterval(qrPollTimer);
+        qrPollTimer = null;
+        mask.style.display = 'flex';
+        mask.innerText = '🎉 登录成功！';
+        tips.innerText = '配置已更新，画质与弹幕已解锁';
+        
+        setTimeout(() => {
+          closeBiliQRModal();
+          loadRooms(true);
+        }, 1500);
+      } else if (code === 86038) {
+        clearInterval(qrPollTimer);
+        qrPollTimer = null;
+        mask.style.display = 'flex';
+        mask.innerText = '❌ 二维码已失效';
+        tips.innerText = '请点击刷新按钮重新获取二维码';
+      } else if (code === 86090) {
+        mask.style.display = 'flex';
+        mask.innerText = '📱 已扫码，请在手机上确认';
+      }
+    }
+  } catch (err) {
+    console.error('Polling QR status error', err);
+  }
 }

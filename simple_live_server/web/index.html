@@ -97,8 +97,9 @@
         </div>
       </div>
 
-      <div class="sidebar-footer">
+      <div class="sidebar-footer" style="gap: 6px;">
         <span id="user-info">admin</span>
+        <button id="bili-login-btn" title="扫码登录 Bilibili" style="font-size: 11px; padding: 4px 8px; border: 1px solid var(--accent-blue); background: transparent; color: var(--accent-blue); border-radius: 6px; cursor: pointer; transition: all 0.2s;">B站登录</button>
         <button id="logout-btn" title="退出登录">退出</button>
       </div>
     </aside>
@@ -179,6 +180,26 @@
             <!-- 动态清晰度按钮 -->
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= B站扫码登录模态框 ================= -->
+  <div id="bili-qr-modal" class="player-modal" style="display: none; z-index: 1001;">
+    <div class="player-container" style="max-width: 360px; height: auto; padding: 25px; align-items: center; justify-content: center; text-align: center; border-radius: 12px; background-color: var(--bg-secondary); border: 1px solid var(--border-color);">
+      <h3 style="font-size: 18px; font-weight: 600; margin-bottom: 15px; color: var(--text-main);">Bilibili 扫码登录</h3>
+      <div id="bili-qr-container" style="background: white; padding: 10px; border-radius: 8px; display: inline-block; margin-bottom: 15px; width: 200px; height: 200px; position: relative;">
+        <!-- 二维码图像 -->
+        <img id="bili-qr-img" src="" alt="二维码" style="width: 180px; height: 180px; display: none;">
+        <!-- 状态遮罩层 -->
+        <div id="bili-qr-status-mask" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); color: white; display: flex; align-items: center; justify-content: center; font-size: 14px; border-radius: 8px;">
+          加载中...
+        </div>
+      </div>
+      <p id="bili-qr-tips" style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">请使用手机哔哩哔哩客户端扫码登录</p>
+      <div style="display: flex; gap: 12px; width: 100%;">
+        <button id="bili-qr-refresh-btn" style="flex: 1; padding: 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px; cursor: pointer;">刷新</button>
+        <button id="bili-qr-close-btn" style="flex: 1; padding: 10px; background: var(--accent-pink); border: none; color: white; border-radius: 8px; cursor: pointer;">取消</button>
       </div>
     </div>
   </div>

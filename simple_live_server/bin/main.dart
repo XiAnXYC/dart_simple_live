@@ -445,6 +445,56 @@ void handleApiRequest(HttpRequest request) async {
     return;
   }
 
+  // 7.1 获取 B站 登录二维码生成参数
+  if (path == '/api/bilibili/qr/generate' && method == 'GET') {
+    try {
+      var dio = HttpClient.instance.dio;
+      var response = await dio.get("https://passport.bilibili.com/x/passport-login/web/qrcode/generate");
+      sendJsonResponse(request, response.data);
+    } catch (e) {
+      sendJsonResponse(request, {'code': -1, 'message': e.toString()}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 7.2 轮询 B站 二维码扫码登录状态
+  if (path == '/api/bilibili/qr/poll' && method == 'GET') {
+    var params = request.uri.queryParameters;
+    var qrcodeKey = params['key'] ?? '';
+    if (qrcodeKey.isEmpty) {
+      sendJsonResponse(request, {'success': false, 'message': 'qrcode_key required'}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    try {
+      var dio = HttpClient.instance.dio;
+      var response = await dio.get(
+        "https://passport.bilibili.com/x/passport-login/web/qrcode/poll",
+        queryParameters: {"qrcode_key": qrcodeKey},
+      );
+      
+      var data = response.data['data'];
+      if (data != null && data['code'] == 0) {
+        // 扫码登录成功！提取 Cookie 并写入配置
+        var setCookies = response.headers['set-cookie'] ?? [];
+        var cookies = <String>[];
+        for (var rawCookie in setCookies) {
+          var c = rawCookie.split(';')[0];
+          if (c.isNotEmpty) cookies.add(c);
+        }
+        if (cookies.isNotEmpty) {
+          var cookieStr = cookies.join(';');
+          config['bilibili_cookie'] = cookieStr;
+          await saveConfig();
+        }
+      }
+      sendJsonResponse(request, response.data);
+    } catch (e) {
+      sendJsonResponse(request, {'code': -1, 'message': e.toString()}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
   // 8. 跨平台搜索直播间
   if (path == '/api/search' && method == 'GET') {
     var params = request.uri.queryParameters;

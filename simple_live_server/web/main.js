@@ -591,7 +591,43 @@ function initDPlayer(videoUrl) {
     preventClickToggle: true, // 禁用点击画面暂停以避免直播流断连恢复失败
     video: {
       url: videoUrl,
-      type: videoType
+      type: videoType,
+      customType: {
+        hls: function (video, player) {
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              maxBufferLength: 30,             // 最大安全缓冲区时长（30秒），防止网络微抖动卡顿
+              maxMaxBufferLength: 60,          // 极限安全缓冲区时长（60秒）
+              liveSyncDurationCount: 5,        // 与直播边缘保持 5 个切片的距离（多蓄水）
+              liveMaxLatencyDurationCount: 10, // 直播最大容忍延迟（10个切片）
+              enableWorker: true,              // 启用 worker 线程
+              lowLatencyMode: false            // 关闭低延迟，以稳定和蓄水优先，根治卡顿
+            });
+            hls.loadSource(video.src);
+            hls.attachMedia(video);
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // iOS/Safari 的原生播放兼容
+            video.src = video.src;
+          }
+        },
+        flv: function (video, player) {
+          if (flvjs.isSupported()) {
+            const flvPlayer = flvjs.createPlayer({
+              type: 'flv',
+              url: video.src,
+              isLive: true
+            }, {
+              enableWorker: true,
+              enableStashBuffer: true,
+              stashInitialSize: 512 * 1024,   // 512KB 预存缓存，大幅抗抖动
+              seekType: 'range',
+              lazyLoad: false                 // 积极预载
+            });
+            flvPlayer.attachMediaElement(video);
+            flvPlayer.load();
+          }
+        }
+      }
     },
     danmaku: {
       id: currentRoom.roomId,

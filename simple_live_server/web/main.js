@@ -47,17 +47,26 @@ function initApp() {
       const action = item.getAttribute('data-action');
       const val = item.getAttribute('data-value');
 
-      // 重置分类和搜索
+      // 点击不同站点或功能时，处理分类和搜索关键词
       activeCategory = null;
       activeSubCategory = null;
-      searchKeyword = '';
-      document.getElementById('search-input').value = '';
 
       if (action === 'site') {
         activeSite = val;
+        // 如果是具体的直播平台，且搜索框里有值，我们就保留搜索，在此平台上执行搜索
+        const isLiveSite = ['bilibili', 'huya', 'douyu', 'douyin'].includes(val);
+        if (!isLiveSite || !document.getElementById('search-input').value.trim()) {
+          searchKeyword = '';
+          document.getElementById('search-input').value = '';
+        }
         loadRooms(true);
-      } else if (action === 'favorites') {
-        activeSite = 'favorites';
+      } else {
+        // 点击“推荐”或“我的关注”等非具体直播平台，自动退出搜索状态
+        searchKeyword = '';
+        document.getElementById('search-input').value = '';
+        if (action === 'favorites') {
+          activeSite = 'favorites';
+        }
         loadRooms(true);
       }
       
@@ -73,10 +82,19 @@ function initApp() {
     const val = searchInput.value.trim();
     if (val) {
       searchKeyword = val;
-      activeSite = 'search'; // 搜索状态
-      // 默认搜索哔哩哔哩平台，可在搜索结果页自由切换平台
+      // 如果当前不是具体的直播平台（如在推荐或收藏），默认切换到 B站 发起搜索，并高亮B站侧边栏
+      if (!['bilibili', 'huya', 'douyu', 'douyin'].includes(activeSite)) {
+        activeSite = 'bilibili';
+        navItems.forEach(i => i.classList.remove('active'));
+        const biliNavItem = document.querySelector('[data-value="bilibili"]');
+        if (biliNavItem) biliNavItem.classList.add('active');
+      }
       activeCategory = null;
       activeSubCategory = null;
+      loadRooms(true);
+    } else {
+      // 搜索框为空，清除搜索，重置大厅
+      searchKeyword = '';
       loadRooms(true);
     }
   };
@@ -223,8 +241,9 @@ async function loadRooms(reset = true) {
   spinner.style.display = 'block';
 
   try {
-    // 隐藏/显示分类栏
-    if (activeSite !== 'recommend' && activeSite !== 'favorites' && activeSite !== 'search') {
+    // 隐藏/显示分类栏（在搜索状态下，分类条需要隐藏）
+    const isLiveSite = ['bilibili', 'huya', 'douyu', 'douyin'].includes(activeSite);
+    if (isLiveSite && !searchKeyword) {
       if (reset && !activeCategory) {
         await loadCategories();
       }
@@ -239,15 +258,13 @@ async function loadRooms(reset = true) {
     let method = 'GET';
     let body = null;
 
-    if (activeSite === 'recommend') {
+    if (searchKeyword) {
+      // 如果有搜索关键词，则执行搜索请求，站点根据当前选中的 activeSite 决定
+      url = `/api/search?site=${activeSite}&keyword=${encodeURIComponent(searchKeyword)}&page=${page}`;
+    } else if (activeSite === 'recommend') {
       url = `/api/recommend?site=bilibili&page=${page}`; // 推荐默认拉B站
     } else if (activeSite === 'favorites') {
       url = `/api/favorites`;
-    } else if (activeSite === 'search') {
-      // 搜索默认为跨平台（可对已选定的站发起搜索）
-      // 这里默认在B站搜索，如果在侧边栏选择过别的平台，就对该平台搜索
-      const site = ['bilibili', 'huya', 'douyu', 'douyin'].includes(activeSite) ? activeSite : 'bilibili';
-      url = `/api/search?site=${site}&keyword=${encodeURIComponent(searchKeyword)}&page=${page}`;
     } else {
       // 平台房间
       if (activeSubCategory) {

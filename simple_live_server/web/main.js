@@ -63,13 +63,19 @@ function initApp() {
   loadBlockRules();
 
   // 绑定屏蔽规则事件
-  document.getElementById('block-settings-nav-btn').addEventListener('click', (e) => {
-    e.preventDefault();
-    openBlockModal();
-  });
-  document.getElementById('block-close-btn').addEventListener('click', closeBlockModal);
-  document.getElementById('block-cancel-btn').addEventListener('click', closeBlockModal);
-  document.getElementById('block-save-btn').addEventListener('click', saveBlockRules);
+  const blockSettingsBtn = document.getElementById('block-settings-nav-btn');
+  if (blockSettingsBtn) {
+    blockSettingsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openBlockModal();
+    });
+  }
+  const blockCloseBtn = document.getElementById('block-close-btn');
+  if (blockCloseBtn) blockCloseBtn.addEventListener('click', closeBlockModal);
+  const blockCancelBtn = document.getElementById('block-cancel-btn');
+  if (blockCancelBtn) blockCancelBtn.addEventListener('click', closeBlockModal);
+  const blockSaveBtn = document.getElementById('block-save-btn');
+  if (blockSaveBtn) blockSaveBtn.addEventListener('click', saveBlockRules);
 
   // 导航栏事件
   const navItems = document.querySelectorAll('.nav-item');

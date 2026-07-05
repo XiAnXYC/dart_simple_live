@@ -556,6 +556,8 @@ void handleApiRequest(HttpRequest request) async {
     } catch (e) {
       sendJsonResponse(request, {'success': false, 'message': e.toString()}, status: HttpStatus.internalServerError);
     }
+    return;
+  }
 
   // 7.4 供 DPlayer 弹幕模块初始化用的空接口，避免连接国外公共服务器超时引起卡顿
   if (path.startsWith('/api/dplayer')) {

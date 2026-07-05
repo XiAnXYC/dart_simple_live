@@ -669,6 +669,8 @@ function initDPlayer(videoUrl) {
                     hls.stopLoad();
                     hls.loadSource(newUrl);
                     hls.startLoad();
+                    // 关键：loadSource 后 video 元素仍处于 paused 状态，必须手动 play() 恢复
+                    video.play().catch(e => console.warn('[Huya] 续期后自动恢复播放失败', e));
                   }
                 } catch (e) {
                   console.error('[Huya] 流地址续期刷新失败', e);

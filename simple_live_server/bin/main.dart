@@ -222,8 +222,8 @@ void handleApiRequest(HttpRequest request) async {
         'userName': e.userName,
         'cover': e.cover,
         'online': e.online,
-        'userAvatar': e.userAvatar,
-        'liveStatus': e.liveStatus,
+        'userAvatar': '',
+        'liveStatus': true,
       }).toList();
       sendJsonResponse(request, {'success': true, 'hasMore': result.hasMore, 'items': items});
     } catch (e) {
@@ -291,8 +291,8 @@ void handleApiRequest(HttpRequest request) async {
         'userName': e.userName,
         'cover': e.cover,
         'online': e.online,
-        'userAvatar': e.userAvatar,
-        'liveStatus': e.liveStatus,
+        'userAvatar': '',
+        'liveStatus': true,
       }).toList();
       sendJsonResponse(request, {'success': true, 'hasMore': result.hasMore, 'items': items});
     } catch (e) {
@@ -401,8 +401,8 @@ void handleApiRequest(HttpRequest request) async {
         'userName': e.userName,
         'cover': e.cover,
         'online': e.online,
-        'userAvatar': e.userAvatar,
-        'liveStatus': e.liveStatus,
+        'userAvatar': '',
+        'liveStatus': true,
       }).toList();
       sendJsonResponse(request, {'success': true, 'hasMore': result.hasMore, 'items': items});
     } catch (e) {

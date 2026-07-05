@@ -634,6 +634,80 @@ function initDPlayer(videoUrl) {
             });
             hls.loadSource(video.src);
             hls.attachMedia(video);
+
+            // ======== 虎牙流 Token 自动续期机制 ========
+            // 虎牙的流地址中包含基于 wsTime 的过期鉴权签名，有效期仅约 5～15 分钟。
+            // 过期后 CDN 会返回 403 Forbidden，导致 HLS 切片拉取中断，画面卡死。
+            // 解决方案：
+            //   1. 主动定时器：每 4 分钟提前重新向后端请求最新流地址并热替换
+            //   2. 被动错误监听：一旦检测到 403/网络级错误，立即强制重刷
+            if (currentRoom && currentRoom.site === 'huya') {
+              let isRefreshing = false;
+
+              const refreshHuyaStream = async () => {
+                if (isRefreshing) return;
+                isRefreshing = true;
+                try {
+                  // 使用当前弹窗中选中的画质重新向后端拉最新流地址
+                  const activeQualityBtn = document.querySelector('#quality-buttons .btn-quality.active');
+                  const currentQuality = qualities.find(q => q.quality === (activeQualityBtn?.innerText || '')) || qualities[0];
+                  if (!currentQuality) { isRefreshing = false; return; }
+
+                  const data = await fetchApi('/api/room/urls', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      site: currentRoom.site,
+                      roomId: currentRoom.roomId,
+                      quality: currentQuality.quality,
+                      index: currentQuality.index
+                    })
+                  });
+
+                  if (data.success && data.urls && data.urls.length > 0) {
+                    const newUrl = data.urls[0];
+                    console.log('[Huya] 流地址已自动续期刷新:', newUrl);
+                    hls.stopLoad();
+                    hls.loadSource(newUrl);
+                    hls.startLoad();
+                  }
+                } catch (e) {
+                  console.error('[Huya] 流地址续期刷新失败', e);
+                } finally {
+                  isRefreshing = false;
+                }
+              };
+
+              // 1. 主动定时续期：每 4 分钟预刷（wsTime 一般5-15分钟有效）
+              const huyaRefreshTimer = setInterval(refreshHuyaStream, 4 * 60 * 1000);
+
+              // 2. 被动错误监听：遇到 403 / 网络错误立即触发续期
+              hls.on(Hls.Events.ERROR, (event, data) => {
+                if (data.fatal) {
+                  if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                    console.warn('[Huya] HLS 网络错误（可能 403 token 过期），触发自动续期...');
+                    refreshHuyaStream();
+                  } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                    console.warn('[Huya] HLS 媒体错误，尝试 hls.recoverMediaError()');
+                    hls.recoverMediaError();
+                  } else {
+                    console.error('[Huya] HLS 不可恢复错误，停止播放');
+                    clearInterval(huyaRefreshTimer);
+                    hls.destroy();
+                  }
+                }
+              });
+
+              // 3. 播放器关闭时清理定时器
+              const origDestroy = dp.destroy.bind(dp);
+              dp.destroy = function() {
+                clearInterval(huyaRefreshTimer);
+                hls.destroy();
+                origDestroy();
+              };
+            }
+            // ======== END 虎牙流 Token 自动续期机制 ========
+
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             // iOS/Safari 的原生播放兼容，必须正确载入真实流地址并主动加载
             video.src = videoUrl;

@@ -1,0 +1,8 @@
+name: simple_live_server
+description: A web-based server for simple live.
+version: 1.0.0
+environment:
+  sdk: '>=2.18.0 <4.0.0'
+dependencies:
+  simple_live_core:
+    path: ../simple_live_core

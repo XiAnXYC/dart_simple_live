@@ -1,0 +1,644 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:simple_live_core/simple_live_core.dart';
+
+Map<String, dynamic> config = {};
+String configPath = '';
+
+void main() async {
+  // 查找配置文件和静态资源目录
+  var scriptPath = Platform.script.toFilePath();
+  var serverDir = File(scriptPath).parent.parent.path;
+  configPath = '$serverDir/config.json';
+  var webPath = '$serverDir/web';
+
+  // 读取配置
+  await loadConfig();
+
+  int port = config['port'] ?? 8080;
+  var server = await HttpServer.bind(InternetAddress.anyIPv4, port);
+  print('Simple Live Web Server is running on port $port');
+  print('Static web directory: $webPath');
+
+  await for (HttpRequest request in server) {
+    handleRequest(request, webPath);
+  }
+}
+
+Future<void> loadConfig() async {
+  try {
+    var file = File(configPath);
+    if (await file.exists()) {
+      config = json.decode(await file.readAsString());
+    } else {
+      config = {
+        "port": 8080,
+        "users": [
+          {
+            "username": "admin",
+            "password": "admin888",
+            "favorites": []
+          }
+        ]
+      };
+    }
+  } catch (e) {
+    print('Error loading config: $e');
+  }
+}
+
+Future<void> saveConfig() async {
+  try {
+    var file = File(configPath);
+    var encoder = JsonEncoder.withIndent('  ');
+    await file.writeAsString(encoder.convert(config));
+  } catch (e) {
+    print('Error saving config: $e');
+  }
+}
+
+LiveSite? getSite(String siteName) {
+  switch (siteName.toLowerCase()) {
+    case 'bilibili':
+      return BiliBiliSite();
+    case 'huya':
+      return HuyaSite();
+    case 'douyu':
+      return DouyuSite();
+    case 'douyin':
+      return DouyinSite();
+    default:
+      return null;
+  }
+}
+
+String? authenticate(String username, String password) {
+  var users = config['users'] as List?;
+  if (users == null) return null;
+  for (var u in users) {
+    if (u['username'] == username && u['password'] == password) {
+      var bytes = utf8.encode(username);
+      var base64Str = base64.encode(bytes);
+      return 'token_$base64Str';
+    }
+  }
+  return null;
+}
+
+String? getUsernameFromToken(String token) {
+  if (!token.startsWith('token_')) return null;
+  try {
+    var base64Str = token.substring(6);
+    var bytes = base64.decode(base64Str);
+    return utf8.decode(bytes);
+  } catch (e) {
+    return null;
+  }
+}
+
+String? validateTokenAndGetUsername(HttpRequest request) {
+  var authHeader = request.headers.value('Authorization');
+  if (authHeader == null || !authHeader.startsWith('Bearer ')) {
+    var tokenParam = request.uri.queryParameters['token'];
+    if (tokenParam != null) {
+      return getUsernameFromToken(tokenParam);
+    }
+    return null;
+  }
+  var token = authHeader.substring(7);
+  return getUsernameFromToken(token);
+}
+
+Future<Map<String, dynamic>?> readJsonBody(HttpRequest request) async {
+  try {
+    var content = await utf8.decoder.bind(request).join();
+    return json.decode(content) as Map<String, dynamic>;
+  } catch (e) {
+    return null;
+  }
+}
+
+void sendJsonResponse(HttpRequest request, dynamic data, {int status = HttpStatus.ok}) async {
+  request.response.statusCode = status;
+  request.response.headers.contentType = ContentType.json;
+  request.response.write(json.encode(data));
+  await request.response.close();
+}
+
+void handleRequest(HttpRequest request, String webPath) async {
+  // CORS 支持
+  request.response.headers.add('Access-Control-Allow-Origin', '*');
+  request.response.headers.add('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  request.response.headers.add('Access-Control-Allow-Headers', 'Origin, Content-Type, Authorization');
+
+  if (request.method == 'OPTIONS') {
+    request.response.statusCode = HttpStatus.ok;
+    await request.response.close();
+    return;
+  }
+
+  var path = request.uri.path;
+
+  // WebSocket 弹幕中转
+  if (path == '/danmaku') {
+    handleWebSocketDanmaku(request);
+    return;
+  }
+
+  // API 路由
+  if (path.startsWith('/api/')) {
+    handleApiRequest(request);
+    return;
+  }
+
+  // 静态文件服务
+  handleStaticFile(request, webPath);
+}
+
+void handleApiRequest(HttpRequest request) async {
+  var path = request.uri.path;
+  var method = request.method;
+
+  // 1. 登录验证
+  if (path == '/api/login' && method == 'POST') {
+    var body = await readJsonBody(request);
+    if (body == null) {
+      sendJsonResponse(request, {'success': false, 'message': 'Invalid JSON body'}, status: HttpStatus.badRequest);
+      return;
+    }
+    var username = body['username'] as String?;
+    var password = body['password'] as String?;
+    if (username == null || password == null) {
+      sendJsonResponse(request, {'success': false, 'message': 'Username and password required'}, status: HttpStatus.badRequest);
+      return;
+    }
+    var token = authenticate(username, password);
+    if (token != null) {
+      sendJsonResponse(request, {'success': true, 'token': token, 'username': username});
+    } else {
+      sendJsonResponse(request, {'success': false, 'message': '用户名或密码错误'});
+    }
+    return;
+  }
+
+  // 校验登录态 (以下 API 全都需要登录)
+  var username = validateTokenAndGetUsername(request);
+  if (username == null) {
+    sendJsonResponse(request, {'success': false, 'message': 'Unauthorized'}, status: HttpStatus.unauthorized);
+    return;
+  }
+
+  // 2. 站点列表
+  if (path == '/api/sites' && method == 'GET') {
+    var sites = [
+      {'id': 'bilibili', 'name': '哔哩哔哩'},
+      {'id': 'huya', 'name': '虎牙直播'},
+      {'id': 'douyu', 'name': '斗鱼直播'},
+      {'id': 'douyin', 'name': '抖音直播'}
+    ];
+    sendJsonResponse(request, {'success': true, 'sites': sites});
+    return;
+  }
+
+  // 3. 获取推荐直播
+  if (path == '/api/recommend' && method == 'GET') {
+    var params = request.uri.queryParameters;
+    var siteName = params['site'] ?? '';
+    var pageStr = params['page'] ?? '1';
+    var page = int.tryParse(pageStr) ?? 1;
+
+    var site = getSite(siteName);
+    if (site == null) {
+      sendJsonResponse(request, {'success': false, 'message': 'Invalid site'}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    try {
+      var result = await site.getRecommendRooms(page: page);
+      var items = result.items.map((e) => {
+        'roomId': e.roomId,
+        'title': e.title,
+        'userName': e.userName,
+        'cover': e.cover,
+        'online': e.online,
+        'userAvatar': e.userAvatar,
+        'liveStatus': e.liveStatus,
+      }).toList();
+      sendJsonResponse(request, {'success': true, 'hasMore': result.hasMore, 'items': items});
+    } catch (e) {
+      sendJsonResponse(request, {'success': false, 'message': 'Error: $e'}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 4. 获取平台分类列表
+  if (path == '/api/categories' && method == 'GET') {
+    var params = request.uri.queryParameters;
+    var siteName = params['site'] ?? '';
+
+    var site = getSite(siteName);
+    if (site == null) {
+      sendJsonResponse(request, {'success': false, 'message': 'Invalid site'}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    try {
+      var result = await site.getCategores();
+      var categories = result.map((c) => {
+        'id': c.id,
+        'name': c.name,
+        'children': c.children.map((sub) => {
+          'id': sub.id,
+          'name': sub.name,
+          'parentId': sub.parentId,
+          'pic': sub.pic,
+        }).toList()
+      }).toList();
+      sendJsonResponse(request, {'success': true, 'categories': categories});
+    } catch (e) {
+      sendJsonResponse(request, {'success': false, 'message': 'Error: $e'}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 5. 获取分类下房间
+  if (path == '/api/rooms' && method == 'GET') {
+    var params = request.uri.queryParameters;
+    var siteName = params['site'] ?? '';
+    var categoryId = params['categoryId'] ?? '';
+    var parentId = params['parentId'] ?? '';
+    var categoryName = params['name'] ?? '';
+    var pageStr = params['page'] ?? '1';
+    var page = int.tryParse(pageStr) ?? 1;
+
+    var site = getSite(siteName);
+    if (site == null || categoryId.isEmpty) {
+      sendJsonResponse(request, {'success': false, 'message': 'Invalid parameters'}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    try {
+      var subCategory = LiveSubCategory(
+        id: categoryId,
+        name: categoryName,
+        parentId: parentId,
+      );
+      var result = await site.getCategoryRooms(subCategory, page: page);
+      var items = result.items.map((e) => {
+        'roomId': e.roomId,
+        'title': e.title,
+        'userName': e.userName,
+        'cover': e.cover,
+        'online': e.online,
+        'userAvatar': e.userAvatar,
+        'liveStatus': e.liveStatus,
+      }).toList();
+      sendJsonResponse(request, {'success': true, 'hasMore': result.hasMore, 'items': items});
+    } catch (e) {
+      sendJsonResponse(request, {'success': false, 'message': 'Error: $e'}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 6. 获取房间详情和清晰度列表
+  if (path == '/api/room/detail' && method == 'GET') {
+    var params = request.uri.queryParameters;
+    var siteName = params['site'] ?? '';
+    var roomId = params['roomId'] ?? '';
+
+    var site = getSite(siteName);
+    if (site == null || roomId.isEmpty) {
+      sendJsonResponse(request, {'success': false, 'message': 'Invalid parameters'}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    try {
+      var detail = await site.getRoomDetail(roomId: roomId);
+      var qualities = <Map<String, dynamic>>[];
+      if (detail.status) {
+        var qList = await site.getPlayQualites(detail: detail);
+        qualities = qList.map((q) => {
+          'quality': q.quality,
+          'data': q.data,
+          'sort': q.sort
+        }).toList();
+      }
+
+      sendJsonResponse(request, {
+        'success': true,
+        'detail': {
+          'roomId': detail.roomId,
+          'title': detail.title,
+          'userName': detail.userName,
+          'cover': detail.cover,
+          'online': detail.online,
+          'userAvatar': detail.userAvatar,
+          'status': detail.status, // 是否正在直播
+          'danmakuData': detail.danmakuData,
+        },
+        'qualities': qualities
+      });
+    } catch (e) {
+      sendJsonResponse(request, {'success': false, 'message': 'Error: $e'}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 7. 获取播放直链
+  if (path == '/api/room/urls' && method == 'POST') {
+    var body = await readJsonBody(request);
+    if (body == null) {
+      sendJsonResponse(request, {'success': false, 'message': 'Invalid JSON body'}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    var siteName = body['site'] as String?;
+    var roomId = body['roomId'] as String?;
+    var qQuality = body['quality'] as String?;
+    var qData = body['data'];
+
+    var site = getSite(siteName ?? '');
+    if (site == null || roomId == null || qQuality == null || qData == null) {
+      sendJsonResponse(request, {'success': false, 'message': 'Invalid parameters'}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    try {
+      var detail = await site.getRoomDetail(roomId: roomId);
+      var quality = LivePlayQuality(quality: qQuality, data: qData);
+      var playUrls = await site.getPlayUrls(detail: detail, quality: quality);
+      sendJsonResponse(request, {
+        'success': true,
+        'urls': playUrls.urls,
+        'headers': playUrls.headers
+      });
+    } catch (e) {
+      sendJsonResponse(request, {'success': false, 'message': 'Error: $e'}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 8. 跨平台搜索直播间
+  if (path == '/api/search' && method == 'GET') {
+    var params = request.uri.queryParameters;
+    var siteName = params['site'] ?? '';
+    var keyword = params['keyword'] ?? '';
+    var pageStr = params['page'] ?? '1';
+    var page = int.tryParse(pageStr) ?? 1;
+
+    var site = getSite(siteName);
+    if (site == null || keyword.isEmpty) {
+      sendJsonResponse(request, {'success': false, 'message': 'Invalid parameters'}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    try {
+      var result = await site.searchRooms(keyword, page: page);
+      var items = result.items.map((e) => {
+        'roomId': e.roomId,
+        'title': e.title,
+        'userName': e.userName,
+        'cover': e.cover,
+        'online': e.online,
+        'userAvatar': e.userAvatar,
+        'liveStatus': e.liveStatus,
+      }).toList();
+      sendJsonResponse(request, {'success': true, 'hasMore': result.hasMore, 'items': items});
+    } catch (e) {
+      sendJsonResponse(request, {'success': false, 'message': 'Error: $e'}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 9. 关注列表管理 (GET, POST, DELETE)
+  if (path == '/api/favorites') {
+    var users = config['users'] as List;
+    var userIndex = -1;
+    for (int i = 0; i < users.length; i++) {
+      if (users[i]['username'] == username) {
+        userIndex = i;
+        break;
+      }
+    }
+
+    if (userIndex == -1) {
+      sendJsonResponse(request, {'success': false, 'message': 'User not found'}, status: HttpStatus.notFound);
+      return;
+    }
+
+    var userFavs = List<Map<String, dynamic>>.from(users[userIndex]['favorites'] ?? []);
+
+    if (method == 'GET') {
+      // 批量获取关注列表最新的直播状态
+      var updatedFavs = <Map<String, dynamic>>[];
+      for (var fav in userFavs) {
+        var site = getSite(fav['site'] ?? '');
+        var roomId = fav['roomId'] ?? '';
+        if (site != null && roomId.isNotEmpty) {
+          try {
+            var detail = await site.getRoomDetail(roomId: roomId);
+            fav['title'] = detail.title;
+            fav['userName'] = detail.userName;
+            fav['cover'] = detail.cover;
+            fav['online'] = detail.online;
+            fav['liveStatus'] = detail.status;
+            fav['userAvatar'] = detail.userAvatar;
+          } catch (e) {
+            // 获取失败则保持旧数据
+          }
+        }
+        updatedFavs.add(fav);
+      }
+      sendJsonResponse(request, {'success': true, 'favorites': updatedFavs});
+      return;
+    }
+
+    if (method == 'POST') {
+      var body = await readJsonBody(request);
+      if (body == null) {
+        sendJsonResponse(request, {'success': false, 'message': 'Invalid JSON body'}, status: HttpStatus.badRequest);
+        return;
+      }
+      var site = body['site'] as String?;
+      var roomId = body['roomId'] as String?;
+      var title = body['title'] as String? ?? '';
+      var userName = body['userName'] as String? ?? '';
+      var cover = body['cover'] as String? ?? '';
+      var userAvatar = body['userAvatar'] as String? ?? '';
+
+      if (site == null || roomId == null) {
+        sendJsonResponse(request, {'success': false, 'message': 'Site and roomId required'}, status: HttpStatus.badRequest);
+        return;
+      }
+
+      // 去重
+      userFavs.removeWhere((item) => item['site'] == site && item['roomId'] == roomId);
+      userFavs.insert(0, {
+        'site': site,
+        'roomId': roomId,
+        'title': title,
+        'userName': userName,
+        'cover': cover,
+        'userAvatar': userAvatar,
+      });
+
+      config['users'][userIndex]['favorites'] = userFavs;
+      await saveConfig();
+
+      sendJsonResponse(request, {'success': true, 'message': 'Added to favorites'});
+      return;
+    }
+
+    if (method == 'DELETE') {
+      var body = await readJsonBody(request);
+      if (body == null) {
+        sendJsonResponse(request, {'success': false, 'message': 'Invalid JSON body'}, status: HttpStatus.badRequest);
+        return;
+      }
+      var site = body['site'] as String?;
+      var roomId = body['roomId'] as String?;
+
+      if (site == null || roomId == null) {
+        sendJsonResponse(request, {'success': false, 'message': 'Site and roomId required'}, status: HttpStatus.badRequest);
+        return;
+      }
+
+      userFavs.removeWhere((item) => item['site'] == site && item['roomId'] == roomId);
+      config['users'][userIndex]['favorites'] = userFavs;
+      await saveConfig();
+
+      sendJsonResponse(request, {'success': true, 'message': 'Removed from favorites'});
+      return;
+    }
+  }
+
+  // 未匹配的 API
+  sendJsonResponse(request, {'success': false, 'message': 'API Route Not Found'}, status: HttpStatus.notFound);
+}
+
+void handleWebSocketDanmaku(HttpRequest request) async {
+  if (!WebSocketTransformer.isUpgradeRequest(request)) {
+    request.response.statusCode = HttpStatus.badRequest;
+    request.response.write('Only WebSocket connections are allowed');
+    await request.response.close();
+    return;
+  }
+
+  var params = request.uri.queryParameters;
+  var siteName = params['site'] ?? '';
+  var roomId = params['roomId'] ?? '';
+
+  var site = getSite(siteName);
+  if (site == null || roomId.isEmpty) {
+    request.response.statusCode = HttpStatus.badRequest;
+    request.response.write('Invalid parameters');
+    await request.response.close();
+    return;
+  }
+
+  WebSocket socket;
+  try {
+    socket = await WebSocketTransformer.upgrade(request);
+  } catch (e) {
+    print('Failed to upgrade WebSocket: $e');
+    return;
+  }
+
+  print('WebSocket client connected for $siteName - $roomId');
+
+  LiveDanmaku? danmaku;
+  bool isClosed = false;
+
+  socket.done.then((_) async {
+    isClosed = true;
+    print('WebSocket client disconnected for $siteName - $roomId');
+    if (danmaku != null) {
+      try {
+        await danmaku!.stop();
+      } catch (e) {
+        print('Error stopping danmaku: $e');
+      }
+    }
+  });
+
+  try {
+    var detail = await site.getRoomDetail(roomId: roomId);
+    danmaku = site.getDanmaku();
+    danmaku.onMessage = (LiveMessage msg) {
+      if (isClosed) return;
+      if (msg.type == LiveMessageType.chat) {
+        var data = {
+          'type': 'chat',
+          'userName': msg.userName,
+          'message': msg.message,
+        };
+        socket.add(json.encode(data));
+      } else if (msg.type == LiveMessageType.online) {
+        var data = {
+          'type': 'online',
+          'online': msg.data,
+        };
+        socket.add(json.encode(data));
+      }
+    };
+
+    danmaku.onClose = (err) {
+      if (isClosed) return;
+      print('Danmaku subscription closed: $err');
+      socket.close();
+    };
+
+    await danmaku.start(detail.danmakuData);
+  } catch (e) {
+    print('Error starting danmaku subscription: $e');
+    if (!isClosed) {
+      socket.add(json.encode({
+        'type': 'error',
+        'message': 'Failed to connect to danmaku: $e'
+      }));
+      socket.close();
+    }
+  }
+}
+
+void handleStaticFile(HttpRequest request, String webPath) async {
+  var path = request.uri.path;
+  if (path == '/') {
+    path = '/index.html';
+  }
+
+  // 简单防止路径遍历攻击
+  if (path.contains('..')) {
+    request.response.statusCode = HttpStatus.forbidden;
+    request.response.write('Forbidden');
+    await request.response.close();
+    return;
+  }
+
+  var file = File('$webPath$path');
+  if (await file.exists()) {
+    var mime = getContentType(path);
+    request.response.headers.contentType = ContentType.parse(mime);
+    try {
+      await file.openRead().pipe(request.response);
+    } catch (e) {
+      print('Error serving file: $e');
+    }
+  } else {
+    request.response.statusCode = HttpStatus.notFound;
+    request.response.write('404 Not Found');
+    await request.response.close();
+  }
+}
+
+String getContentType(String path) {
+  if (path.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (path.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (path.endsWith('.js')) return 'application/javascript; charset=utf-8';
+  if (path.endsWith('.png')) return 'image/png';
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
+  if (path.endsWith('.ico')) return 'image/x-icon';
+  if (path.endsWith('.svg')) return 'image/svg+xml';
+  return 'text/plain';
+}

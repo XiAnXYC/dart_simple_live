@@ -335,7 +335,7 @@ void handleApiRequest(HttpRequest request) async {
           'online': detail.online,
           'userAvatar': detail.userAvatar,
           'status': detail.status, // 是否正在直播
-          'danmakuData': detail.danmakuData,
+          'danmakuData': null,
         },
         'qualities': qualities
       });

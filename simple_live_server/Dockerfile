@@ -19,7 +19,10 @@ WORKDIR /app/simple_live_server
 # 获取 Dart 依赖并触发运行 build hooks
 RUN dart pub get
 
+# 编译为自包含的原生可执行二进制文件
+RUN dart compile exe bin/main.dart -o bin/server
+
 EXPOSE 8080
 
 # 启动聚合直播服务端
-CMD ["dart", "run", "bin/main.dart"]
+CMD ["./bin/server"]

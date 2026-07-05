@@ -589,7 +589,14 @@ async function playRoomWithQuality(quality) {
     });
 
     if (data.success && data.urls.length > 0) {
-      const playUrl = data.urls[0]; // 选取第一条可用线路
+      let playUrl = data.urls[0]; // 选取第一条可用线路
+
+      // 虎牙 FLV 流：CDN 限制跨域（CORS），浏览器无法直接请求
+      // 通过后端代理路由转发，后端以 Huya 官方 Referer 拉流再返回给浏览器
+      if (currentRoom.site === 'huya' && (playUrl.includes('.flv') || playUrl.includes('huya.com'))) {
+        playUrl = `/stream/proxy?url=${encodeURIComponent(playUrl)}&token=${token}`;
+      }
+
       listDiv.innerHTML += `<div class="danmaku-item danmaku-system">播放流载入成功，开始解码播放。</div>`;
       initDPlayer(playUrl);
     } else {
@@ -605,11 +612,12 @@ function initDPlayer(videoUrl) {
   if (dp) dp.destroy();
 
   // 判断视频流类型
+  // 代理 URL（/stream/proxy?...）不含 .flv 扩展名，需单独判断
   let videoType = 'normal';
-  if (videoUrl.includes('.m3u8') || videoUrl.includes('m3u8')) {
-    videoType = 'hls';
-  } else if (videoUrl.includes('.flv') || videoUrl.includes('flv')) {
+  if (videoUrl.includes('/stream/proxy') || videoUrl.includes('.flv') || videoUrl.includes('flv')) {
     videoType = 'flv';
+  } else if (videoUrl.includes('.m3u8') || videoUrl.includes('m3u8')) {
+    videoType = 'hls';
   }
 
   // 针对 iOS Safari 的优化：iOS 原生支持 m3u8，如果 hls 解码器失效，可以用原生 video 兼容

@@ -160,6 +160,67 @@ void handleRequest(HttpRequest request, String webPath) async {
     return;
   }
 
+  // 流代理：后端以 Huya/Douyu 官方 Referer 拉取直播流后转发给浏览器，绕开 CDN 的 CORS 策略
+  // 路径格式：/stream/proxy?url=<encoded-url>&token=<auth-token>
+  if (path == '/stream/proxy') {
+    final params = request.uri.queryParameters;
+    final streamUrl = params['url'];
+    final tkn = params['token'];
+
+    // 简单鉴权：验证 token 参数
+    if (streamUrl == null || streamUrl.isEmpty || tkn == null || getUsernameFromToken(tkn) == null) {
+      request.response.statusCode = HttpStatus.forbidden;
+      await request.response.close();
+      return;
+    }
+
+    // 安全校验：只允许代理直播 CDN 域名，防止 SSRF
+    final allowedHosts = ['huya.com', 'douyu.com', 'bilibili.com', 'bilivideo.com',
+                          'douyucdn.cn', 'douyucdn2.cn'];
+    final parsedUri = Uri.tryParse(streamUrl);
+    if (parsedUri == null || !allowedHosts.any((h) => parsedUri.host.endsWith(h))) {
+      request.response.statusCode = HttpStatus.forbidden;
+      await request.response.close();
+      return;
+    }
+
+    try {
+      final client = HttpClient();
+      // 使用与 Huya 官方网页端相同的请求头，确保 CDN 接受请求
+      final proxyReq = await client.getUrl(parsedUri);
+      proxyReq.headers.set(HttpHeaders.refererHeader, 'https://www.huya.com/');
+      proxyReq.headers.set(HttpHeaders.userAgentHeader,
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      proxyReq.headers.set('Origin', 'https://www.huya.com');
+
+      final proxyResp = await proxyReq.close();
+
+      // 将 CDN 响应头透传给浏览器（保留 Content-Type，注入 CORS 头）
+      request.response.statusCode = proxyResp.statusCode;
+      request.response.headers.add('Access-Control-Allow-Origin', '*');
+      request.response.headers.add('Cache-Control', 'no-cache');
+
+      // 检测内容类型：FLV 流
+      final contentType = proxyResp.headers.contentType;
+      if (contentType != null) {
+        request.response.headers.contentType = contentType;
+      } else {
+        request.response.headers.contentType = ContentType('video', 'x-flv');
+      }
+
+      // 直接 pipe 流数据（不缓冲，低延迟转发）
+      await proxyResp.pipe(request.response);
+    } catch (e) {
+      print('Stream proxy error: $e');
+      try {
+        request.response.statusCode = HttpStatus.badGateway;
+        await request.response.close();
+      } catch (_) {}
+    }
+    return;
+  }
+
   // API 路由
   if (path.startsWith('/api/')) {
     handleApiRequest(request);

@@ -568,6 +568,54 @@ void handleApiRequest(HttpRequest request) async {
     return;
   }
 
+  // 7.5 查询 B站 登录状态与用户信息
+  if (path == '/api/bilibili/status' && method == 'GET') {
+    var cookieStr = config['bilibili_cookie'] as String? ?? '';
+    if (cookieStr.trim().isEmpty) {
+      sendJsonResponse(request, {'success': true, 'isLogin': false});
+      return;
+    }
+
+    try {
+      var dio = _dio;
+      var response = await dio.get(
+        "https://api.bilibili.com/x/web-interface/nav",
+        options: Options(headers: {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "referer": "https://www.bilibili.com/",
+          "cookie": cookieStr,
+        }),
+      );
+
+      var resMap = Map<String, dynamic>.from(response.data);
+      if (resMap['code'] == 0 && resMap['data'] != null && resMap['data']['isLogin'] == true) {
+        var uname = resMap['data']['uname'] ?? '未知用户';
+        sendJsonResponse(request, {
+          'success': true,
+          'isLogin': true,
+          'uname': uname
+        });
+      } else {
+        sendJsonResponse(request, {
+          'success': true,
+          'isLogin': false,
+          'message': 'Cookie已过期'
+        });
+      }
+    } catch (e) {
+      sendJsonResponse(request, {'success': false, 'message': e.toString()}, status: HttpStatus.internalServerError);
+    }
+    return;
+  }
+
+  // 7.6 注销 B站 登录凭证
+  if (path == '/api/bilibili/logout' && method == 'POST') {
+    config['bilibili_cookie'] = '';
+    await saveConfig();
+    sendJsonResponse(request, {'success': true, 'message': 'B站凭证已清除'});
+    return;
+  }
+
   // 8. 跨平台搜索直播间
   if (path == '/api/search' && method == 'GET') {
     var params = request.uri.queryParameters;

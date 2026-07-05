@@ -43,15 +43,8 @@ function initApp() {
   document.getElementById('logout-btn').addEventListener('submit', (e) => e.preventDefault());
   document.getElementById('logout-btn').addEventListener('click', handleLogout);
 
-  // 绑定 B站 扫码登录
-  document.getElementById('bili-login-btn').addEventListener('click', () => {
-    document.getElementById('bili-qr-modal').style.display = 'flex';
-    // 隐藏可能展开的手动输入框并清空内容
-    document.getElementById('bili-manual-input-area').style.display = 'none';
-    document.getElementById('bili-cookie-input').value = '';
-    document.getElementById('bili-toggle-manual-btn').innerText = '手动输入 Cookie (备用)';
-    startBiliQRLogin();
-  });
+  // 绑定 B站 统一操作按钮（根据状态展示为扫码或注销）
+  document.getElementById('bili-login-btn').addEventListener('click', handleBiliAction);
   document.getElementById('bili-qr-refresh-btn').addEventListener('click', startBiliQRLogin);
   document.getElementById('bili-qr-close-btn').addEventListener('click', closeBiliQRModal);
 
@@ -176,6 +169,7 @@ function showApp() {
   
   // 拉取关注列表并开始载入默认推荐房间
   loadFavoritesCount();
+  updateBiliStatus(); // 载入大厅时拉取并展示 B站 登录状态与用户名
   loadRooms(true);
 }
 
@@ -975,6 +969,7 @@ async function pollBiliQRStatus() {
         
         setTimeout(() => {
           closeBiliQRModal();
+          updateBiliStatus();
           loadRooms(true);
         }, 1500);
       } else if (code === 86038) {
@@ -1013,6 +1008,7 @@ async function handleSaveBiliCookie() {
     if (res.success) {
       alert('🎉 Cookie 保存并应用成功！');
       closeBiliQRModal();
+      updateBiliStatus();
       loadRooms(true);
     } else {
       alert('保存失败：' + res.message);
@@ -1055,4 +1051,60 @@ function flushDanmakus() {
 
   // 触发单次重排到底部
   listDiv.scrollTop = listDiv.scrollHeight;
+}
+
+async function handleBiliAction() {
+  const btn = document.getElementById('bili-login-btn');
+  if (btn && btn.getAttribute('data-action') === 'logout') {
+    if (confirm('确定要注销当前的 Bilibili 登录凭证吗？注销后将无法获取高清画质。')) {
+      try {
+        const res = await fetchApi('/api/bilibili/logout', { method: 'POST' });
+        if (res.success) {
+          alert('B站登录凭证已注销！');
+          updateBiliStatus();
+          loadRooms(true);
+        }
+      } catch (err) {
+        alert('连接服务器失败');
+        console.error(err);
+      }
+    }
+  } else {
+    document.getElementById('bili-qr-modal').style.display = 'flex';
+    document.getElementById('bili-manual-input-area').style.display = 'none';
+    document.getElementById('bili-cookie-input').value = '';
+    document.getElementById('bili-toggle-manual-btn').innerText = '手动输入 Cookie (备用)';
+    startBiliQRLogin();
+  }
+}
+
+async function updateBiliStatus() {
+  const statusText = document.getElementById('bili-status-text');
+  const loginBtn = document.getElementById('bili-login-btn');
+
+  if (!statusText || !loginBtn) return;
+
+  try {
+    const data = await fetchApi('/api/bilibili/status');
+    if (data.success && data.isLogin) {
+      statusText.innerHTML = `<span id="bili-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: #4caf50; display: inline-block; transition: all 0.3s;"></span> B站已登录: ${escapeHtml(data.uname)}`;
+      loginBtn.innerText = '注销';
+      loginBtn.style.background = 'rgba(255, 82, 82, 0.1)';
+      loginBtn.style.color = '#ff5252';
+      loginBtn.style.border = '1px solid rgba(255, 82, 82, 0.3)';
+      loginBtn.style.padding = '3px 6px';
+      loginBtn.setAttribute('data-action', 'logout');
+    } else {
+      statusText.innerHTML = `<span id="bili-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: #ff9800; display: inline-block; transition: all 0.3s;"></span> B站未登录`;
+      loginBtn.innerText = '扫码登录';
+      loginBtn.style.background = 'var(--accent-blue)';
+      loginBtn.style.color = '#fff';
+      loginBtn.style.border = 'none';
+      loginBtn.style.padding = '3px 6px';
+      loginBtn.setAttribute('data-action', 'login');
+    }
+  } catch (err) {
+    console.error('Failed to check Bilibili status', err);
+    statusText.innerHTML = `<span id="bili-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: #ff5252; display: inline-block; transition: all 0.3s;"></span> 连接失败`;
+  }
 }

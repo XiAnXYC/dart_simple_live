@@ -97,10 +97,17 @@
         </div>
       </div>
 
-      <div class="sidebar-footer" style="gap: 6px;">
-        <span id="user-info">admin</span>
-        <button id="bili-login-btn" title="扫码登录 Bilibili" style="font-size: 11px; padding: 4px 8px; border: 1px solid var(--accent-blue); background: transparent; color: var(--accent-blue); border-radius: 6px; cursor: pointer; transition: all 0.2s;">B站登录</button>
-        <button id="logout-btn" title="退出登录">退出</button>
+      <div class="sidebar-footer" style="flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <span id="user-info">admin</span>
+          <button id="logout-btn" title="退出管理登录" style="font-size: 11px; padding: 4px 8px; background: rgba(255,82,82,0.1); border: 1px solid rgba(255,82,82,0.3); color: #ff5252; border-radius: 6px; cursor: pointer;">退出</button>
+        </div>
+        <div class="bili-status-container" style="display: flex; align-items: center; justify-content: space-between; width: 100%; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px; font-size: 11px;">
+          <span id="bili-status-text" style="color: var(--text-muted); display: flex; align-items: center; gap: 4px;">
+            <span id="bili-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: #ccc; display: inline-block; transition: all 0.3s;"></span> 检测中...
+          </span>
+          <button id="bili-login-btn" style="background: var(--accent-blue); color: #fff; border: none; padding: 3px 6px; border-radius: 4px; font-size: 10px; cursor: pointer; transition: all 0.2s;">载入中</button>
+        </div>
       </div>
     </aside>
 

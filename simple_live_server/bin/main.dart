@@ -382,17 +382,51 @@ void handleApiRequest(HttpRequest request) async {
       var cachedQualities = _qualitiesCache[cacheKey];
       LivePlayQuality? quality;
 
-      if (cachedQualities != null && index != null && index >= 0 && index < cachedQualities.length) {
-        quality = cachedQualities[index];
-      } else {
+      if (cachedQualities != null) {
+        if (index != null && index >= 0 && index < cachedQualities.length) {
+          quality = cachedQualities[index];
+        } else {
+          // 自愈逻辑：若前端传来的 index 丢失（比如因缓存加载了旧的 JS 文件），通过画质名字在缓存里模糊匹配还原
+          for (var q in cachedQualities) {
+            if (q.quality == qQuality) {
+              quality = q;
+              break;
+            }
+          }
+        }
+      }
+
+      if (quality == null) {
         // Fallback
         quality = LivePlayQuality(quality: qQuality, data: null);
       }
 
       var playUrls = await site.getPlayUrls(detail: detail, quality: quality);
+      var urls = playUrls.urls;
+
+      // 针对虎牙源的后处理：将 FLV 链接翻译为兼容 iOS / 手机全平台且安全性更高的 HTTPS HLS (m3u8) 直链
+      if (siteName == 'huya') {
+        urls = urls.map((url) {
+          var updated = url;
+          // 1. 替换域名：将 *.flv.huya.com 替换为 *.hls.huya.com
+          updated = updated.replaceAll('.flv.huya.com', '.hls.huya.com');
+          // 2. 替换文件后缀：将 /src/xxx.flv 替换为 /src/xxx.m3u8
+          if (updated.contains('.flv?')) {
+            updated = updated.replaceFirst('.flv?', '.m3u8?');
+          } else if (updated.endsWith('.flv')) {
+            updated = updated.substring(0, updated.length - 4) + '.m3u8';
+          }
+          // 3. 升级协议为 https
+          if (updated.startsWith('http://')) {
+            updated = 'https://' + updated.substring(7);
+          }
+          return updated;
+        }).toList();
+      }
+
       sendJsonResponse(request, {
         'success': true,
-        'urls': playUrls.urls,
+        'urls': urls,
         'headers': playUrls.headers
       });
     } catch (e) {

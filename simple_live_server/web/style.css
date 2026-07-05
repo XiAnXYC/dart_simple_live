@@ -784,19 +784,22 @@ body {
   justify-content: center;
 }
 
-/* 覆盖 DPlayer 背景色使其黑掉 */
+/* 终极锁定 DPlayer、所有包裹层与 video 标签的背景为纯黑色，彻底绝杀白边漏白 */
+.dplayer,
+.dplayer-video-wrap,
+.dplayer video,
+.dplayer-fulled,
+.dplayer-fullscreen,
 #dplayer {
-  width: 100%;
-  height: 100%;
-  background-color: #000;
+  background: #000000 !important;
+  background-color: #000000 !important;
 }
 
-/* 彻底清除 DPlayer 全屏状态下的任何背景漏白与边距白边 */
 #dplayer:fullscreen,
 #dplayer:-webkit-full-screen,
 #dplayer:-moz-full-screen,
 #dplayer:-ms-fullscreen {
-  background-color: #000 !important;
+  background-color: #000000 !important;
   padding: 0 !important;
   margin: 0 !important;
 }

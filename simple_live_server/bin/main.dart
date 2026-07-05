@@ -555,7 +555,14 @@ void handleApiRequest(HttpRequest request) async {
       sendJsonResponse(request, {'success': true, 'message': 'Cookie saved successfully'});
     } catch (e) {
       sendJsonResponse(request, {'success': false, 'message': e.toString()}, status: HttpStatus.internalServerError);
-    }
+  }
+
+  // 7.4 供 DPlayer 弹幕模块初始化用的空接口，避免连接国外公共服务器超时引起卡顿
+  if (path.startsWith('/api/dplayer')) {
+    sendJsonResponse(request, {
+      'code': 0,
+      'data': []
+    });
     return;
   }
 

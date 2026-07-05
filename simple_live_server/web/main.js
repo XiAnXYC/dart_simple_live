@@ -19,6 +19,8 @@ let qrPollTimer = null;       // B站扫码轮询定时器
 let qrKey = '';               // B站扫码 key
 let qrB3 = '';                // B站扫码关联 buvid3
 let qrB4 = '';                // B站扫码关联 buvid4
+let pendingDanmakus = [];     // 弹幕缓存队列，用于节流更新DOM以防卡死主线程
+let danmakuTimer = null;      // 弹幕节流定时器
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -593,7 +595,7 @@ function initDPlayer(videoUrl) {
     },
     danmaku: {
       id: currentRoom.roomId,
-      api: 'https://api.prprpr.me/dplayer/', // 启用 DPlayer 弹幕机制
+      api: '/api/dplayer/', // 指向本地空弹幕响应，规避超时与卡顿
       bottom: '15%',
       unlimited: true
     }
@@ -652,18 +654,10 @@ function connectDanmakuWS(site, roomId) {
           });
         }
 
-        // 追加到弹幕列表侧边栏
-        const msgItem = document.createElement('div');
-        msgItem.className = 'danmaku-item';
-        msgItem.innerHTML = `<span class="danmaku-author">${escapeHtml(data.userName)}:</span><span class="danmaku-text">${escapeHtml(data.message)}</span>`;
-        listDiv.appendChild(msgItem);
-
-        // 滚动到底部
-        listDiv.scrollTop = listDiv.scrollHeight;
-
-        // 控制列表大小，防止海量弹幕卡死浏览器 (保留最新200条)
-        if (listDiv.children.length > 200) {
-          listDiv.removeChild(listDiv.firstChild);
+        // 加入批量节流渲染队列
+        pendingDanmakus.push(data);
+        if (!danmakuTimer) {
+          danmakuTimer = setTimeout(flushDanmakus, 150);
         }
       } else if (data.type === 'online') {
         document.getElementById('player-online').innerText = formatOnline(data.online);
@@ -989,4 +983,35 @@ async function handleSaveBiliCookie() {
     btn.disabled = false;
     btn.innerText = '保存并生效';
   }
+}
+
+function flushDanmakus() {
+  danmakuTimer = null;
+  if (pendingDanmakus.length === 0) return;
+
+  const listDiv = document.getElementById('danmaku-list');
+  if (!listDiv) {
+    pendingDanmakus = [];
+    return;
+  }
+
+  // 使用 DocumentFragment 一次性批量挂载，仅触发一次重排
+  const fragment = document.createDocumentFragment();
+  pendingDanmakus.forEach(data => {
+    const msgItem = document.createElement('div');
+    msgItem.className = 'danmaku-item';
+    msgItem.innerHTML = `<span class="danmaku-author">${escapeHtml(data.userName)}:</span><span class="danmaku-text">${escapeHtml(data.message)}</span>`;
+    fragment.appendChild(msgItem);
+  });
+
+  listDiv.appendChild(fragment);
+  pendingDanmakus = [];
+
+  // 严格控制列表最大节点数，防内存泄露
+  while (listDiv.children.length > 200) {
+    listDiv.removeChild(listDiv.firstChild);
+  }
+
+  // 触发单次重排到底部
+  listDiv.scrollTop = listDiv.scrollHeight;
 }
